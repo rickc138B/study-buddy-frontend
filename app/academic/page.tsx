@@ -60,7 +60,18 @@ export default function AcademicPage() {
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
-        botContent += decoder.decode(value);
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const raw = line.slice(6).trim();
+            if (raw === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed.text) botContent += parsed.text;
+            } catch {}
+          }
+        }
         setMessages(prev => {
           const updated = [...prev];
           updated[updated.length - 1] = { role: "assistant", content: botContent };
