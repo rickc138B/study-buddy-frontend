@@ -112,7 +112,7 @@ const CIVIC_DOMAIN_ID = "1fccae5b-a8e0-415f-ad54-ac2070764a51";
 
 const TOPIC_SEEDS: Record<string, string> = {
   elections: "What elections are coming up in Imo State and when?",
-  compare:   "Compare the main candidates positions on education and economy.",
+  compare:   "Compare Peter Obi, Tinubu and Atiku positions on education and the economy.",
   rights:    "What are my voting rights under the Electoral Act?",
   represent: "Who represents Owerri Municipal from president down to LGA chairman?",
   dates:     "What are the key dates and deadlines for the 2027 elections?",
