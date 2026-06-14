@@ -134,6 +134,7 @@ export default function CivicPage() {
   const [input, setInput]           = useState("");
   const [loading, setLoading]       = useState(false);
   const [showSelector, setShowSelector] = useState(false);
+  const [openSource, setOpenSource]     = useState<Source[] | null>(null);
   const [selState, setSelState]     = useState("Imo");
   const [selLGA, setSelLGA]         = useState("Owerri Municipal");
   const [constituency, setConstituency] = useState({ state: "Imo", lga: "Owerri Municipal" });
@@ -462,7 +463,6 @@ export default function CivicPage() {
           </div>
         </div>
       )}
-    </div>
 
       {/* Source drawer */}
       {openSource && (
@@ -487,5 +487,6 @@ export default function CivicPage() {
           </div>
         </div>
       )}
+    </div>
   );
 }
