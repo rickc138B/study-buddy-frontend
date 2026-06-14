@@ -116,8 +116,8 @@ const TOPIC_SEEDS: Record<string, string> = {
   rights:    "What are my voting rights under the Electoral Act?",
   represent: "Who represents Owerri Municipal from president down to LGA chairman?",
   dates:     "What are the key dates and deadlines for the 2027 elections?",
-  verify:    "How can I verify a political claim or promise?",
-  track:     "What promises were made in 2019 and what happened since?",
+  verify:    "What does the Electoral Act say about vote buying and voter intimidation?",
+  track:     "What did Peter Obi promise in his 2023 manifesto about security and the economy?",
   general:   "What do I need to know about the 2027 Nigerian elections?",
 };
 
