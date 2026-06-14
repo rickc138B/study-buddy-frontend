@@ -55,13 +55,16 @@ export default function AdminPage() {
   }
 
   // ── Materials ─────────────────────────────────────────────────────────────
-  async function loadMaterials(id: string) {
+  async function loadMaterials(id: string, kind: "course" | "domain") {
     try {
-      const res = await fetch(`${API}/api/admin/ingest/course/${id}`);
+      const url = kind === "domain"
+        ? `${API}/api/admin/domains/${id}/materials`
+        : `${API}/api/admin/ingest/course/${id}`;
+      const res = await fetch(url);
       const data = await res.json();
       setMaterials(Array.isArray(data) ? data : []);
       data.forEach((m: Material) => {
-        if (m.status === "pending" || m.status === "processing") startPolling(m.id);
+        if (m.status === "pending" || m.status === "processing") startPolling(m.id, kind);
       });
     } catch { setMaterials([]); }
   }
@@ -69,7 +72,7 @@ export default function AdminPage() {
   async function selectItem(item: Selected) {
     setSelected(item);
     setSidebarOpen(false);
-    if (item) await loadMaterials(item.data.id);
+    if (item) await loadMaterials(item.data.id, item.kind);
   }
 
   // ── Upload ────────────────────────────────────────────────────────────────
@@ -84,17 +87,20 @@ export default function AdminPage() {
     setMaterials(prev => [{ id: tempId, filename: file.name, file_type: fileType, chunk_count: 0, status: "pending", uploaded_at: new Date().toISOString() }, ...prev]);
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("courseId", selected.data.id);
     fd.append("fileType", fileType);
+    const uploadUrl = selected.kind === "domain"
+      ? `${API}/api/admin/domains/${selected.data.id}/upload`
+      : `${API}/api/admin/ingest/upload`;
+    if (selected.kind === "course") fd.append("courseId", selected.data.id);
     try {
-      const res = await fetch(`${API}/api/admin/ingest/upload`, { method: "POST", body: fd });
+      const res = await fetch(uploadUrl, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? "Upload failed");
       setMaterials(prev => prev.map(m => m.id === tempId
         ? { id: data.materialId, filename: data.filename, file_type: fileType, chunk_count: 0, status: "pending", uploaded_at: new Date().toISOString() }
         : m
       ));
-      startPolling(data.materialId);
+      startPolling(data.materialId, selected.kind);
       showToast(`${file.name} uploaded`, true);
     } catch (e: any) {
       setMaterials(prev => prev.filter(m => m.id !== tempId));
@@ -103,11 +109,14 @@ export default function AdminPage() {
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────
-  function startPolling(materialId: string) {
+  function startPolling(materialId: string, kind: "course" | "domain" = "course") {
     if (pollRef.current[materialId]) return;
     pollRef.current[materialId] = setInterval(async () => {
       try {
-        const m = await fetch(`${API}/api/admin/ingest/status/${materialId}`).then(r => r.json());
+        const statusUrl = kind === "domain"
+          ? `${API}/api/admin/domains/materials/status/${materialId}`
+          : `${API}/api/admin/ingest/status/${materialId}`;
+        const m = await fetch(statusUrl).then(r => r.json());
         setMaterials(prev => prev.map(mat => mat.id === materialId
           ? { ...mat, status: m.status, chunk_count: m.chunkCount ?? mat.chunk_count, error_message: m.error }
           : mat
