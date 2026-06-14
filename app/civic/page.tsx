@@ -118,7 +118,7 @@ const CIVIC_DOMAIN_ID = "1fccae5b-a8e0-415f-ad54-ac2070764a51";
 
 const TOPIC_SEEDS: Record<string, string> = {
   elections: "What elections are coming up in Imo State and when?",
-  compare:   "Compare the main candidates\'s positions on education and economy.",
+  compare:   "Compare the main candidates positions on education and economy.",
   rights:    "What are my voting rights under the Electoral Act?",
   represent: "Who represents Owerri Municipal from president down to LGA chairman?",
   dates:     "What are the key dates and deadlines for the 2027 elections?",
@@ -128,22 +128,74 @@ const TOPIC_SEEDS: Record<string, string> = {
 };
 
 interface ChatMsg { role: "user" | "bot"; content: string; }
+interface ChatState { title: string; msgs: ChatMsg[]; topicKey: string; sessionId: string | null; }
+
+function sessionStorageKey(topicKey: string) {
+  return `civic_session:${CIVIC_DOMAIN_ID}:${topicKey}`;
+}
 
 export default function CivicPage() {
-  const [chat, setChat] = useState<{ title: string; msgs: ChatMsg[] } | null>(null);
+  const [chat, setChat] = useState<ChatState | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function openChat(key: string) {
+  async function openChat(key: string) {
     const topic = topics.find(t => t.key === key);
     const title = topic?.title ?? "Ask Civic Buddy";
-    const seed  = TOPIC_SEEDS[key];
-    setChat({ title, msgs: [] });
-    if (seed) sendMessage(seed, []);
+
+    // Check for existing session in localStorage
+    const stored = localStorage.getItem(sessionStorageKey(key));
+    if (stored) {
+      const { sessionId } = JSON.parse(stored);
+      // Load previous messages
+      try {
+        const res  = await fetch(`/api/sessions/${sessionId}/messages`);
+        const msgs = await res.json();
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          const chatMsgs: ChatMsg[] = msgs.map((m: any) => ({
+            role:    m.role === "assistant" ? "bot" : "user",
+            content: m.content,
+          }));
+          setChat({ title, msgs: chatMsgs, topicKey: key, sessionId });
+          return;
+        }
+      } catch {}
+    }
+
+    // New session
+    const seed = TOPIC_SEEDS[key];
+    setChat({ title, msgs: [], topicKey: key, sessionId: null });
+    if (seed) sendMessage(seed, [], key, null);
   }
 
-  async function sendMessage(text: string, currentMsgs: ChatMsg[]) {
+  async function getOrCreateSession(topicKey: string, sessionId: string | null): Promise<string> {
+    if (sessionId) return sessionId;
+    const stored = localStorage.getItem(sessionStorageKey(topicKey));
+    if (stored) return JSON.parse(stored).sessionId;
+
+    const res  = await fetch("/api/sessions", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ domainId: CIVIC_DOMAIN_ID, topicKey }),
+    });
+    const data = await res.json();
+    localStorage.setItem(sessionStorageKey(topicKey), JSON.stringify({ sessionId: data.id }));
+    return data.id;
+  }
+
+  async function saveMessage(sessionId: string, role: "user" | "assistant", content: string) {
+    await fetch("/api/sessions/messages", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ sessionId, role, content }),
+    }).catch(() => {});
+  }
+
+  async function sendMessage(text: string, currentMsgs: ChatMsg[], topicKey?: string, sessionId?: string | null) {
     if (!text.trim() || loading) return;
+    const key = topicKey ?? chat?.topicKey ?? "general";
+    const sid = sessionId !== undefined ? sessionId : (chat?.sessionId ?? null);
+
     const userMsg: ChatMsg = { role: "user", content: text };
     const nextMsgs = [...currentMsgs, userMsg];
     setChat(prev => prev ? { ...prev, msgs: nextMsgs } : null);
@@ -151,6 +203,10 @@ export default function CivicPage() {
     setLoading(true);
 
     try {
+      const resolvedSid = await getOrCreateSession(key, sid);
+      setChat(prev => prev ? { ...prev, sessionId: resolvedSid } : null);
+      await saveMessage(resolvedSid, "user", text);
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -188,6 +244,8 @@ export default function CivicPage() {
           return { ...prev, msgs: updated };
         });
       }
+
+      await saveMessage(resolvedSid, "assistant", botContent);
     } catch (e) {
       console.error(e);
     } finally {
@@ -310,12 +368,12 @@ export default function CivicPage() {
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && sendMessage(input, chat.msgs)}
+              onKeyDown={e => e.key === "Enter" && sendMessage(input, chat.msgs, chat.topicKey, chat.sessionId)}
               placeholder="Ask a follow-up..."
               style={{ flex: 1, padding: "12px 16px", borderRadius: 100, border: "1px solid var(--line)", background: "var(--paper)", fontSize: 14, outline: "none", fontFamily: "inherit" }}
             />
             <div
-              onClick={() => sendMessage(input, chat.msgs)}
+              onClick={() => sendMessage(input, chat.msgs, chat.topicKey, chat.sessionId)}
               style={{ width: 42, height: 42, borderRadius: "50%", background: loading ? "var(--line)" : "var(--green)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, cursor: loading ? "default" : "pointer" }}>↑</div>
           </div>
         </div>
