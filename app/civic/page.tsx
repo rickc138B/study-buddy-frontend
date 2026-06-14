@@ -87,12 +87,85 @@ const seeds: Record<string, { title: string; msgs: [string, string][] }> = {
   },
 };
 
+const CIVIC_DOMAIN_ID = "1fccae5b-a8e0-415f-ad54-ac2070764a51";
+
+const TOPIC_SEEDS: Record<string, string> = {
+  elections: "What elections are coming up in Imo State and when?",
+  compare:   "Compare the main candidates\'s positions on education and economy.",
+  rights:    "What are my voting rights under the Electoral Act?",
+  represent: "Who represents Owerri Municipal from president down to LGA chairman?",
+  dates:     "What are the key dates and deadlines for the 2027 elections?",
+  verify:    "How can I verify a political claim or promise?",
+  track:     "What promises were made in 2019 and what happened since?",
+  general:   "What do I need to know about the 2027 Nigerian elections?",
+};
+
+interface ChatMsg { role: "user" | "bot"; content: string; }
+
 export default function CivicPage() {
-  const [chat, setChat] = useState<{ title: string; msgs: [string, string][] } | null>(null);
+  const [chat, setChat] = useState<{ title: string; msgs: ChatMsg[] } | null>(null);
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
   function openChat(key: string) {
-    setChat(seeds[key] ?? { title: "Ask Civic Buddy", msgs: [["bot", "Ask me anything about candidates, your rights, or the election process."]] });
+    const topic = topics.find(t => t.key === key);
+    const title = topic?.title ?? "Ask Civic Buddy";
+    const seed  = TOPIC_SEEDS[key];
+    setChat({ title, msgs: [] });
+    if (seed) sendMessage(seed, []);
+  }
+
+  async function sendMessage(text: string, currentMsgs: ChatMsg[]) {
+    if (!text.trim() || loading) return;
+    const userMsg: ChatMsg = { role: "user", content: text };
+    const nextMsgs = [...currentMsgs, userMsg];
+    setChat(prev => prev ? { ...prev, msgs: nextMsgs } : null);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domainId: CIVIC_DOMAIN_ID,
+          message:  text,
+          mode:     "study",
+          history:  currentMsgs.map(m => ({ role: m.role === "bot" ? "assistant" : "user", content: m.content })),
+        }),
+      });
+
+      const reader  = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let   botContent = "";
+      const withBot: ChatMsg[] = [...nextMsgs, { role: "bot", content: "" }];
+      setChat(prev => prev ? { ...prev, msgs: withBot } : null);
+
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        for (const line of chunk.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (raw === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed.text) botContent += parsed.text;
+          } catch {}
+        }
+        setChat(prev => {
+          if (!prev) return null;
+          const updated = [...prev.msgs];
+          updated[updated.length - 1] = { role: "bot", content: botContent };
+          return { ...prev, msgs: updated };
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -189,24 +262,32 @@ export default function CivicPage() {
             <span style={{ fontWeight: 700, fontSize: 18, color: "var(--green)" }}>{chat.title}</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-            {chat.msgs.map(([role, html], i) => (
+            {chat.msgs.length === 0 && loading && (
+              <div style={{ alignSelf: "flex-start", padding: "12px 14px", borderRadius: 14, fontSize: 13.5, background: "var(--paper-raised)", border: "1px solid var(--line)", color: "var(--muted)" }}>...</div>
+            )}
+            {chat.msgs.map((m, i) => (
               <div key={i} style={{
-                maxWidth: "85%", alignSelf: role === "user" ? "flex-end" : "flex-start",
+                maxWidth: "85%", alignSelf: m.role === "user" ? "flex-end" : "flex-start",
                 padding: "12px 14px", borderRadius: 14, fontSize: 13.5, lineHeight: 1.6,
-                background: role === "user" ? "var(--green)" : "var(--paper-raised)",
-                color: role === "user" ? "var(--paper)" : "var(--ink)",
-                border: role === "user" ? "none" : "1px solid var(--line)",
-              }} dangerouslySetInnerHTML={{ __html: html }} />
+                background: m.role === "user" ? "var(--green)" : "var(--paper-raised)",
+                color: m.role === "user" ? "var(--paper)" : "var(--ink)",
+                border: m.role === "user" ? "none" : "1px solid var(--line)",
+              }}>
+                {m.content || (loading && i === chat.msgs.length - 1 ? "..." : "")}
+              </div>
             ))}
           </div>
           <div style={{ padding: "12px 20px 20px", display: "flex", gap: 10, borderTop: "1px solid var(--line)", background: "var(--paper-raised)" }}>
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && sendMessage(input, chat.msgs)}
               placeholder="Ask a follow-up..."
               style={{ flex: 1, padding: "12px 16px", borderRadius: 100, border: "1px solid var(--line)", background: "var(--paper)", fontSize: 14, outline: "none", fontFamily: "inherit" }}
             />
-            <div style={{ width: 42, height: 42, borderRadius: "50%", background: "var(--green)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, cursor: "pointer" }}>↑</div>
+            <div
+              onClick={() => sendMessage(input, chat.msgs)}
+              style={{ width: 42, height: 42, borderRadius: "50%", background: loading ? "var(--line)" : "var(--green)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, cursor: loading ? "default" : "pointer" }}>↑</div>
           </div>
         </div>
       )}
