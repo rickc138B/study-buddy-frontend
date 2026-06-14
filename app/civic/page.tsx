@@ -121,7 +121,8 @@ const TOPIC_SEEDS: Record<string, string> = {
   general:   "What do I need to know about the 2027 Nigerian elections?",
 };
 
-interface ChatMsg { role: "user" | "bot"; content: string; }
+interface Source { source_file: string; page: number | null; content: string; }
+interface ChatMsg { role: "user" | "bot"; content: string; sources?: Source[]; }
 interface ChatState { title: string; msgs: ChatMsg[]; topicKey: string; sessionId: string | null; }
 
 function sessionStorageKey(topicKey: string) {
@@ -182,6 +183,7 @@ export default function CivicPage() {
             content: m.content,
           }));
           setChat({ title, msgs: chatMsgs, topicKey: key, sessionId });
+          document.body.style.overflow = 'hidden';
           return;
         }
       } catch {}
@@ -190,6 +192,7 @@ export default function CivicPage() {
     // New session
     const seed = TOPIC_SEEDS[key];
     setChat({ title, msgs: [], topicKey: key, sessionId: null });
+    document.body.style.overflow = 'hidden';
     if (seed) sendMessage(seed, [], key, null);
   }
 
@@ -246,14 +249,25 @@ export default function CivicPage() {
       const reader  = res.body?.getReader();
       const decoder = new TextDecoder();
       let   botContent = "";
+      let   botSources: Source[] = [];
+      let   buffer = "";
       const withBot: ChatMsg[] = [...nextMsgs, { role: "bot", content: "" }];
       setChat(prev => prev ? { ...prev, msgs: withBot } : null);
 
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split("\n")) {
+        buffer += decoder.decode(value);
+        
+        // Extract sources block if present
+        if (buffer.includes("__SOURCES__") && buffer.includes("__SOURCES_END__")) {
+          const start = buffer.indexOf("__SOURCES__") + "__SOURCES__".length;
+          const end   = buffer.indexOf("__SOURCES_END__");
+          try { botSources = JSON.parse(buffer.slice(start, end)); } catch {}
+          buffer = buffer.slice(end + "__SOURCES_END__".length);
+        }
+
+        for (const line of buffer.split("\n")) {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
           if (raw === "[DONE]") break;
@@ -262,10 +276,14 @@ export default function CivicPage() {
             if (parsed.text) botContent += parsed.text;
           } catch {}
         }
+        // Keep last incomplete line in buffer
+        const lines = buffer.split("\n");
+        buffer = lines[lines.length - 1];
+
         setChat(prev => {
           if (!prev) return null;
           const updated = [...prev.msgs];
-          updated[updated.length - 1] = { role: "bot", content: botContent };
+          updated[updated.length - 1] = { role: "bot", content: botContent, sources: botSources };
           return { ...prev, msgs: updated };
         });
       }
@@ -401,7 +419,7 @@ export default function CivicPage() {
           background: "var(--paper)", display: "flex", flexDirection: "column", zIndex: 10,
         }}>
           <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--line)", background: "var(--paper-raised)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-            <button onClick={() => setChat(null)} style={{ width: 32, height: 32, borderRadius: "50%", border: "1px solid var(--line)", background: "var(--paper)", fontSize: 16, cursor: "pointer", color: "var(--green)" }}>←</button>
+            <button onClick={() => { setChat(null); document.body.style.overflow = ''; }} style={{ width: 32, height: 32, borderRadius: "50%", border: "1px solid var(--line)", background: "var(--paper)", fontSize: 16, cursor: "pointer", color: "var(--green)" }}>←</button>
             <span style={{ fontWeight: 700, fontSize: 18, color: "var(--green)" }}>{chat.title}</span>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -419,6 +437,14 @@ export default function CivicPage() {
                 {m.role === "bot"
                   ? renderWithCitations(m.content || (loading && i === chat.msgs.length - 1 ? "..." : ""))
                   : m.content}
+                {m.role === "bot" && m.sources && m.sources.length > 0 && (
+                  <div
+                    onClick={() => setOpenSource(m.sources!)}
+                    style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontFamily: "monospace", color: "var(--green)", background: "var(--green-soft)", padding: "3px 10px", borderRadius: 100, cursor: "pointer", letterSpacing: "0.05em" }}
+                  >
+                    § {m.sources.length} source{m.sources.length > 1 ? "s" : ""} — tap to view
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -437,5 +463,29 @@ export default function CivicPage() {
         </div>
       )}
     </div>
+
+      {/* Source drawer */}
+      {openSource && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          <div onClick={() => setOpenSource(null)} style={{ flex: 1, background: "rgba(0,0,0,0.4)" }} />
+          <div style={{ background: "var(--paper-raised)", borderRadius: "20px 20px 0 0", padding: "20px 20px 40px", maxHeight: "70vh", overflowY: "auto", maxWidth: 480, width: "100%", margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ fontFamily: "monospace", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--green)" }}>Sources used</span>
+              <button onClick={() => setOpenSource(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            {openSource.map((s, i) => (
+              <div key={i} style={{ marginBottom: 16, padding: 14, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: "var(--green)", background: "var(--green-soft)", padding: "2px 8px", borderRadius: 100 }}>
+                    {s.source_file.replace(/_/g, " ").replace(".pdf", "")}
+                  </span>
+                  {s.page && <span style={{ fontFamily: "monospace", fontSize: 10, color: "var(--muted)" }}>p.{s.page}</span>}
+                </div>
+                <p style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink)", margin: 0 }}>{s.content}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
   );
 }
