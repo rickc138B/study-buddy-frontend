@@ -87,6 +87,33 @@ const seeds: Record<string, { title: string; msgs: [string, string][] }> = {
   },
 };
 
+function renderWithCitations(text: string) {
+  const parts = text.split(/(\[Source:[^\]]+\])/g);
+  return (
+    <span>
+      {parts.map((part, i) => {
+        const match = part.match(/^\[Source:\s*(.+?)(?:,\s*page\s*(\d+))?\]$/);
+        if (match) {
+          const file = match[1].replace(/_/g, " ").replace(/\.pdf$/i, "");
+          const page = match[2];
+          return (
+            <span key={i} style={{
+              display: "inline-flex", alignItems: "center", gap: 3,
+              fontFamily: "monospace", fontSize: 11, fontWeight: 600,
+              color: "var(--ochre)", background: "#F4E8D0",
+              borderRadius: 4, padding: "1px 6px", margin: "0 2px",
+              whiteSpace: "nowrap",
+            }}>
+              § {file}{page ? `, p.${page}` : ""}
+            </span>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </span>
+  );
+}
+
 const CIVIC_DOMAIN_ID = "1fccae5b-a8e0-415f-ad54-ac2070764a51";
 
 const TOPIC_SEEDS: Record<string, string> = {
@@ -273,7 +300,9 @@ export default function CivicPage() {
                 color: m.role === "user" ? "var(--paper)" : "var(--ink)",
                 border: m.role === "user" ? "none" : "1px solid var(--line)",
               }}>
-                {m.content || (loading && i === chat.msgs.length - 1 ? "..." : "")}
+                {m.role === "bot"
+                  ? renderWithCitations(m.content || (loading && i === chat.msgs.length - 1 ? "..." : ""))
+                  : m.content}
               </div>
             ))}
           </div>
