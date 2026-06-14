@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { PRESIDENT, STATES, STATE_NAMES } from "./nigeria-data";
 import ModeToggle from "../components/ModeToggle";
 
 const topics = [
@@ -12,14 +13,7 @@ const topics = [
   { key: "track", icon: "📜", title: "Track record", desc: "2019 promises vs. what happened since", color: "green" },
 ];
 
-const reps = [
-  { level: "President", name: "Bola Tinubu", party: "APC", indent: 0 },
-  { level: "Governor, Imo State", name: "Hope Uzodinma", party: "APC", indent: 1 },
-  { level: "Senator, Owerri Zone", name: "—", party: "—", indent: 2 },
-  { level: "House of Reps", name: "—", party: "—", indent: 2 },
-  { level: "State Assembly", name: "—", party: "—", indent: 3 },
-  { level: "LGA Chairman", name: "—", party: "—", indent: 4 },
-];
+
 
 const seeds: Record<string, { title: string; msgs: [string, string][] }> = {
   elections: {
@@ -135,9 +129,40 @@ function sessionStorageKey(topicKey: string) {
 }
 
 export default function CivicPage() {
-  const [chat, setChat] = useState<ChatState | null>(null);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [chat, setChat]             = useState<ChatState | null>(null);
+  const [input, setInput]           = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [showSelector, setShowSelector] = useState(false);
+  const [selState, setSelState]     = useState("Imo");
+  const [selLGA, setSelLGA]         = useState("Owerri Municipal");
+  const [constituency, setConstituency] = useState({ state: "Imo", lga: "Owerri Municipal" });
+
+  useEffect(() => {
+    const stored = localStorage.getItem("civic_constituency");
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setConstituency(parsed);
+      setSelState(parsed.state);
+      setSelLGA(parsed.lga);
+    }
+  }, []);
+
+  function saveConstituency() {
+    const c = { state: selState, lga: selLGA };
+    setConstituency(c);
+    localStorage.setItem("civic_constituency", JSON.stringify(c));
+    setShowSelector(false);
+  }
+
+  const stateData = STATES[constituency.state];
+  const reps = [
+    { level: "President",                    name: PRESIDENT.name,          party: PRESIDENT.party,          indent: 0 },
+    { level: `Governor, ${constituency.state} State`, name: stateData?.governor.name ?? "—", party: stateData?.governor.party ?? "—", indent: 1 },
+    { level: "Senator",                      name: "—",                     party: "—",                      indent: 2 },
+    { level: "House of Reps",               name: "—",                     party: "—",                      indent: 2 },
+    { level: "State Assembly",              name: "—",                     party: "—",                      indent: 3 },
+    { level: "LGA Chairman",               name: "—",                     party: "—",                      indent: 4 },
+  ];
 
   async function openChat(key: string) {
     const topic = topics.find(t => t.key === key);
@@ -273,13 +298,13 @@ export default function CivicPage() {
       <div style={{ margin: "16px 20px 0", padding: "12px 16px", background: "var(--paper-raised)", border: "1px solid var(--line)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontFamily: "monospace", fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Your constituency</div>
-          <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>Owerri Municipal, Imo State</div>
+          <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{constituency.lga}, {constituency.state} State</div>
         </div>
-        <button style={{ fontWeight: 600, fontSize: 13, color: "var(--green)", background: "none", border: "none", cursor: "pointer" }}>Change</button>
+        <button onClick={() => setShowSelector(true)} style={{ fontWeight: 600, fontSize: 13, color: "var(--green)", background: "none", border: "none", cursor: "pointer" }}>Change</button>
       </div>
 
       {/* Representatives */}
-      <div style={{ fontFamily: "monospace", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "20px 20px 10px" }}>Your representatives</div>
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "20px 20px 10px" }}>Your representatives — {constituency.state}</div>
       <div style={{ margin: "0 20px", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden", background: "var(--paper-raised)" }}>
         {reps.map((r, i) => (
           <div key={i} style={{
@@ -335,6 +360,39 @@ export default function CivicPage() {
       <div style={{ textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "var(--muted)", paddingBottom: 28 }}>
         Every answer cites its source — tap § to verify
       </div>
+
+      {/* Constituency selector modal */}
+      {showSelector && (
+        <div style={{ position: "fixed", inset: 0, background: "#00000088", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100, padding: 16 }}>
+          <div style={{ background: "var(--paper-raised)", border: "1px solid var(--line)", borderRadius: 20, padding: 24, width: "100%", maxWidth: 480 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, color: "var(--green)", marginBottom: 4 }}>Your constituency</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>Select your state and local government area</div>
+
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>State</div>
+            <select
+              value={selState}
+              onChange={e => { setSelState(e.target.value); setSelLGA(STATES[e.target.value]?.lgas[0] ?? ""); }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "var(--paper)", color: "var(--ink)", fontSize: 15, marginBottom: 16, fontFamily: "inherit" }}
+            >
+              {STATE_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Local Government Area</div>
+            <select
+              value={selLGA}
+              onChange={e => setSelLGA(e.target.value)}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "var(--paper)", color: "var(--ink)", fontSize: 15, marginBottom: 24, fontFamily: "inherit" }}
+            >
+              {(STATES[selState]?.lgas ?? []).map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowSelector(false)} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid var(--line)", background: "transparent", color: "var(--muted)", fontSize: 14, cursor: "pointer" }}>Cancel</button>
+              <button onClick={saveConstituency} style={{ flex: 2, padding: "12px 0", borderRadius: 10, border: "none", background: "var(--green)", color: "var(--paper)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Save constituency</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Chat overlay */}
       {chat && (
